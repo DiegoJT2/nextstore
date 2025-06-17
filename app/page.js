@@ -1,8 +1,27 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { fetchProductos } from "./api/productosapi";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { fetchProductos, actualizarStock } from "./api/productosapi";
+import { fetchCategorias } from "./api/categoriasapi";
 import ProductoItem from "./components/ProductoItem";
+import { realizarCompra } from "./api/pedidosapi";
+import ModalCompra from "./components/ModalCompra";
+
+// Componente Toast reutilizable
+function ToastComponent({ toast }) {
+  if (!toast) return null;
+  return (
+    <div
+      className={`fixed bottom-6 right-6 z-50 px-4 py-2 rounded shadow-lg text-white transition-all duration-300 ${
+        toast.type === "error" ? "bg-red-500" : "bg-green-500"
+      }`}
+      role="alert"
+      aria-live="polite"
+    >
+      {toast.msg}
+    </div>
+  );
+}
 
 // Hook personalizado para el carrito
 function useCarrito() {
@@ -45,13 +64,16 @@ function useCarrito() {
       )
     );
   }, []);
-  return { carrito, agregar, eliminar, cambiarCantidad };
+  const vaciar = useCallback(() => {
+    setCarrito([]);
+  }, []);
+  return { carrito, agregar, eliminar, cambiarCantidad, vaciar };
 }
 
 // Hook para toasts
 function useToast() {
   const [toast, setToast] = useState(null);
-  const timeoutRef = React.useRef();
+  const timeoutRef = useRef();
 
   const showToast = useCallback((msg, type = "success") => {
     setToast({ msg, type });
@@ -63,36 +85,48 @@ function useToast() {
     return () => clearTimeout(timeoutRef.current);
   }, []);
 
-  const Toast = toast ? (
-    <div
-      className={`fixed bottom-6 right-6 z-50 px-4 py-2 rounded shadow-lg text-white transition-all duration-300 ${
-        toast.type === "error" ? "bg-red-500" : "bg-green-500"
-      }`}
-      role="alert"
-      aria-live="assertive"
-    >
-      {toast.msg}
-    </div>
-  ) : null;
-  return [Toast, showToast];
+  return [toast, showToast];
+}
+
+// Utilidad para validar email y método de pago (fuera del componente)
+function validarDatosCompra(email, metodoPago) {
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return "Debes introducir un correo válido";
+  }
+  if (!metodoPago) {
+    return "Debes elegir un método de pago";
+  }
+  return null;
 }
 
 export default function Page() {
   const [productos, setProductos] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(0); // 0 = Todas
   const [loading, setLoading] = useState(true);
   const [mostrarCarrito, setMostrarCarrito] = useState(false);
-  const { carrito, agregar, eliminar, cambiarCantidad } = useCarrito();
-  const [Toast, showToast] = useToast();
+  const { carrito, agregar, eliminar, cambiarCantidad, vaciar } = useCarrito();
+  const [toast, showToast] = useToast();
+  // Estado para el email del cliente y método de pago
+  const [emailCliente, setEmailCliente] = useState("");
+  const [metodoPago, setMetodoPago] = useState("");
+  // Estado para loading de compra y confirmación
+  const [comprando, setComprando] = useState(false);
+  const [compraExitosa, setCompraExitosa] = useState(false);
+  const [compraTotal, setCompraTotal] = useState(0);
+  const [modalCompraAbierto, setModalCompraAbierto] = useState(false);
+  const [ultimoCarrito, setUltimoCarrito] = useState([]);
 
-  useEffect(() => {
-    setLoading(true);
-    fetchProductos()
-      .then(setProductos)
-      .catch(() => showToast("Error al cargar productos", "error"))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Memoiza productos por id para acceso rápido
+  const productosMap = useMemo(() => {
+    const map = new Map();
+    for (const p of productos) {
+      map.set(p.id_producto ?? p.id, p);
+    }
+    return map;
+  }, [productos]);
 
+  // Calcula total y cantidad solo si hay productos en el carrito
   const total = useMemo(
     () => carrito.reduce((acc, p) => acc + p.precio * p.cantidad, 0),
     [carrito]
@@ -102,7 +136,31 @@ export default function Page() {
     [carrito]
   );
 
-  // Memoiza la función para evitar renders innecesarios
+  // Solo muestra el toast de "añadido" si se añade un producto nuevo al carrito (no al cambiar cantidad)
+  useEffect(() => {
+    if (!ultimoCarrito.length) {
+      setUltimoCarrito(carrito);
+      return;
+    }
+    const idsAntes = new Set(ultimoCarrito.map(p => p.id_producto ?? p.id));
+    const idsAhora = new Set(carrito.map(p => p.id_producto ?? p.id));
+    if (idsAhora.size > idsAntes.size) {
+      showToast("Producto añadido al carrito");
+    }
+    setUltimoCarrito(carrito);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carrito]);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetchProductos().then(setProductos).catch(() => showToast("Error al cargar productos", "error")),
+      fetchCategorias().then(setCategorias).catch(() => showToast("Error al cargar categorías", "error"))
+    ]).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // handleAddProducto optimizado
   const handleAddProducto = useCallback(
     (producto) => {
       const productoId = producto.id_producto ?? producto.id;
@@ -115,30 +173,33 @@ export default function Page() {
         return;
       }
       agregar(producto);
-      // Mueve el toast a un efecto para que se muestre después de actualizar el carrito
-      // showToast("Producto añadido al carrito");
     },
     [carrito, agregar, showToast]
   );
 
-  // Añade este efecto para mostrar el toast solo cuando cambia el carrito
-  useEffect(() => {
-    if (carrito.length > 0) {
-      // Opcional: puedes refinar esto si quieres evitar mostrar el toast en la carga inicial
-      showToast("Producto añadido al carrito");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [carrito]);
-
   return (
     <div className="bg-gray-100 dark:bg-gray-800 min-h-screen flex flex-col antialiased">
-      {Toast}
+      {/* Toast global */}
+      {!modalCompraAbierto && <ToastComponent toast={toast} />}
       {/* Header */}
-      <header className="bg-blue-600 text-white p-4 flex justify-between items-center shadow">
-        <h1 className="text-2xl font-bold">Tienda Deportiva</h1>
+      <header className="bg-blue-600 text-white p-4 flex flex-col sm:flex-row justify-between items-center shadow gap-2">
+        <div className="flex items-center gap-4 w-full sm:w-auto justify-between">
+          <h1 className="text-2xl font-bold">Tienda Deportiva</h1>
+          {/* Filtro de categorías en el encabezado */}
+          <select
+            className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white text-black sm:ml-4"
+            value={categoriaSeleccionada}
+            onChange={e => setCategoriaSeleccionada(Number(e.target.value))}
+          >
+            <option value={0}>Todas las categorías</option>
+            {categorias.map(cat => (
+              <option key={cat.id_categoria} value={cat.id_categoria}>{cat.nombre}</option>
+            ))}
+          </select>
+        </div>
         <button
           id="icono-carrito"
-          className="cursor-pointer flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-white transition"
+          className="cursor-pointer flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-white transition mt-2 sm:mt-0"
           aria-label="Abrir carrito"
           onClick={() => setMostrarCarrito((v) => !v)}
         >
@@ -156,6 +217,7 @@ export default function Page() {
       </header>
 
       <main className="p-4 flex-1">
+        {/* Quita el formulario de aquí */}
         {/* Carrito */}
         <section
           id="carrito"
@@ -186,9 +248,17 @@ export default function Page() {
               </li>
             ))}
           </ul>
-          <p className="font-bold text-right">
+          <p className="font-bold text-right mb-4">
             Total: <span id="total">{total.toFixed(2)}€</span>
           </p>
+          <button
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition disabled:opacity-50"
+            disabled={carrito.length === 0 || comprando}
+            onClick={() => setModalCompraAbierto(true)}
+            aria-label="Comprar"
+          >
+            Comprar
+          </button>
         </section>
 
         {/* Loader */}
@@ -208,13 +278,15 @@ export default function Page() {
           aria-label="Lista de productos"
         >
           {!loading &&
-            productos.map((producto) => (
-              <ProductoItem
-                key={producto.id_producto ?? producto.id}
-                producto={producto}
-                onAdd={() => handleAddProducto(producto)}
-              />
-            ))}
+            productos
+              .filter(p => categoriaSeleccionada === 0 || p.id_categoria === categoriaSeleccionada)
+              .map((producto) => (
+                <ProductoItem
+                  key={producto.id_producto ?? producto.id}
+                  producto={producto}
+                  onAdd={() => handleAddProducto(producto)}
+                />
+              ))}
         </section>
       </main>
 
@@ -222,6 +294,48 @@ export default function Page() {
       <footer className="bg-gray-800 text-white text-center p-4 mt-10">
         © 2025 Tienda Deportiva
       </footer>
+
+      {/* Modal de confirmación de compra */}
+      {compraExitosa && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded shadow-lg text-center">
+            <h2 className="text-2xl font-bold mb-4 text-green-600">¡Compra realizada!</h2>
+            <p className="mb-4">Gracias por tu compra. Total pagado: <span className="font-bold">{compraTotal.toFixed(2)}€</span></p>
+            <button
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+              onClick={() => setCompraExitosa(false)}
+              aria-label="Cerrar confirmación"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de compra como componente */}
+      <ModalCompra
+        open={modalCompraAbierto}
+        toast={<ToastComponent toast={toast} />}
+        emailCliente={emailCliente}
+        setEmailCliente={setEmailCliente}
+        metodoPago={metodoPago}
+        setMetodoPago={setMetodoPago}
+        comprando={comprando}
+        carrito={carrito}
+        productosMap={productosMap}
+        fetchProductos={fetchProductos}
+        setProductos={setProductos}
+        vaciar={vaciar}
+        setCompraTotal={setCompraTotal}
+        setCompraExitosa={setCompraExitosa}
+        setModalCompraAbierto={setModalCompraAbierto}
+        setComprando={setComprando}
+        showToast={showToast}
+        realizarCompra={realizarCompra}
+        validarDatosCompra={validarDatosCompra}
+        actualizarStock={actualizarStock}
+        total={total}
+      />
     </div>
   );
 }

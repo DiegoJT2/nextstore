@@ -30,10 +30,10 @@ export async function crearProducto(producto) {
 
 export async function actualizarProducto(id, datos) {
   if (!id) throw new Error("ID requerido");
-  const res = await fetch('/api/actualizarProducto', {
+  const res = await fetch(`/api/productos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, ...datos })
+    body: JSON.stringify(datos)
   });
   if (!res.ok) throw new Error(await parseError(res, 'Error al actualizar producto'));
   return res.json();
@@ -42,7 +42,7 @@ export async function actualizarProducto(id, datos) {
 export async function actualizarStock(id, stock) {
   if (!id) throw new Error("ID requerido");
   if (typeof stock !== "number") throw new Error("Stock inválido");
-  const res = await fetch(`/api/productos/${id}`, {
+  const res = await fetch(`/api/productos/${id}/stock`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ stock })
