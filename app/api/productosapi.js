@@ -60,6 +60,18 @@ export async function eliminarProducto(id) {
   return res.json();
 }
 
+export async function fetchProductosPaginado({ limit = 12, offset = 0, categoria = 0, precioMin, precioMax, marca, stock } = {}) {
+  let url = `/api/productos?limit=${limit}&offset=${offset}`;
+  if (categoria && categoria !== 0) url += `&categoria=${categoria}`;
+  if (precioMin !== undefined) url += `&precioMin=${encodeURIComponent(precioMin)}`;
+  if (precioMax !== undefined) url += `&precioMax=${encodeURIComponent(precioMax)}`;
+  if (marca !== undefined) url += `&marca=${encodeURIComponent(marca)}`;
+  if (stock !== undefined) url += `&stock=${encodeURIComponent(stock)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Error al obtener productos');
+  return res.json();
+}
+
 // Manejo de errores más detallado
 async function parseError(res, defaultMsg) {
   try {

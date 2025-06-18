@@ -20,6 +20,25 @@ You can start editing the page by modifying `app/page.js`. The page auto-updates
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Dependencias necesarias
+
+Para que el proyecto funcione correctamente, asegúrate de instalar las siguientes dependencias:
+
+```bash
+npm install next react react-dom
+npm install mysql2
+npm install bcryptjs
+```
+
+- `next`, `react`, `react-dom`: Framework principal y librerías de React.
+- `mysql2`: Conexión con la base de datos MySQL/MariaDB.
+- `bcryptjs`: Hashing seguro de contraseñas para autenticación de usuarios.
+
+Si usas yarn:
+```bash
+yarn add next react react-dom mysql2 bcryptjs
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

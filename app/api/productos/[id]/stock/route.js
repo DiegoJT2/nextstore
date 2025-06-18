@@ -12,8 +12,8 @@ export async function PUT(request, { params }) {
     if (!rows || rows.length === 0) {
       return new Response(JSON.stringify({ error: "Producto no encontrado" }), { status: 404 });
     }
-    const stockActual = rows[0].stock;
-    const nuevoStock = stockActual + stock;
+    // El nuevo stock debe ser el valor recibido, no sumar
+    const nuevoStock = stock;
     if (nuevoStock < 0) {
       return new Response(JSON.stringify({ error: "Stock insuficiente" }), { status: 400 });
     }

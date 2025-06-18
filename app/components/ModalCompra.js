@@ -4,7 +4,6 @@ export default function ModalCompra({
   open,
   toast,
   emailCliente,
-  setEmailCliente,
   metodoPago,
   setMetodoPago,
   comprando,
@@ -38,6 +37,7 @@ export default function ModalCompra({
           onSubmit={async (e) => {
             e.preventDefault();
             if (comprando) return;
+            // Solo valida método de pago, no email
             const error = validarDatosCompra(emailCliente, metodoPago);
             if (error) {
               showToast(error, "error");
@@ -75,15 +75,14 @@ export default function ModalCompra({
                 const nuevoStock = (productoActual?.stock ?? 0) - p.cantidad;
                 return actualizarStock(p.id_producto ?? p.id, nuevoStock);
               }));
-              // Refresca productos desde la base de datos
+              // Refresca productos desde la base de datos (asegura recarga tras compra)
               const nuevosProductos = await fetchProductos(true);
-              setProductos(nuevosProductos);
+              setProductos(Array.isArray(nuevosProductos) ? nuevosProductos : []);
               vaciar();
               setCompraTotal(total);
               setCompraExitosa(true);
               setModalCompraAbierto(false);
               setComprando(false);
-              setEmailCliente(""); // Limpia email tras compra
               setMetodoPago("");   // Limpia método de pago tras compra
             } catch (e) {
               showToast(e?.message ? `Error: ${e.message}` : "Error al tramitar el pedido", "error");
@@ -91,20 +90,10 @@ export default function ModalCompra({
             }
           }}
         >
-          <input
-            type="email"
-            placeholder="Introduce tu correo"
-            autoComplete="email"
-            className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white min-w-[220px]"
-            value={emailCliente}
-            onChange={e => setEmailCliente(e.target.value)}
-            required
-            aria-label="Correo electrónico"
-            pattern="^[^@\s]+@[^@\s]+\.[^@\s]+$"
-            onInvalid={e => e.target.setCustomValidity('Introduce un correo válido')}
-            onInput={e => e.target.setCustomValidity('')}
-            disabled={comprando}
-          />
+          {/* Email eliminado, solo se muestra el email autenticado */}
+          <div className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white min-w-[220px] bg-gray-100 text-gray-700 cursor-not-allowed select-none">
+            {emailCliente}
+          </div>
           <select
             className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white"
             value={metodoPago}
@@ -120,10 +109,9 @@ export default function ModalCompra({
           <div className="flex gap-2 mt-2">
             <button
               type="button"
-              className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded"
+              className="flex-1 btn-modal-cancel"
               onClick={() => {
                 setModalCompraAbierto(false);
-                setEmailCliente("");
                 setMetodoPago("");
               }}
               disabled={comprando}
