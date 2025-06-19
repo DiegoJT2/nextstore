@@ -1,4 +1,5 @@
 import { Geist, Geist_Mono } from "next/font/google";
+import { CarritoProvider } from "@/context/carritocontext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,11 +19,11 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+    <html lang="es">
+      <body>
+        <CarritoProvider>
+          {children}
+        </CarritoProvider>
       </body>
     </html>
   );

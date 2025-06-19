@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { fetchProductos, actualizarStock, fetchProductosPaginado } from "./api/productosapi";
-import ProductoItem from "./components/ProductoItem";
+import ProductoItem from "./components/productoitem";
 import { realizarCompra } from "./api/pedidosapi";
-import ModalCompra from "./components/ModalCompra";
-import ConfirmModal from "./components/ConfirmModal";
-import AuthForm from "./components/AuthForm";
+import ModalCompra from "./components/modalcompra";
+import ConfirmModal from "./components/confirmmodal";
+import AuthForm from "./components/authform";
 import { useRouter } from "next/navigation";
-import { useCarrito } from "@/context/CarritoContext";
+import { useCarrito } from "@/context/carritocontext";
 
 // Componente Toast reutilizable
 function ToastComponent({ toast }) {
@@ -102,9 +102,9 @@ export default function Page() {
   const [compraTotal, setCompraTotal] = useState(0);
   const [modalCompraAbierto, setModalCompraAbierto] = useState(false);
   const [ultimoCarrito, setUltimoCarrito] = useState([]);
-  const [confirmarEliminacion, setConfirmarEliminacion] = useState({ abierto: false, id: null });
+  const [confirmEliminacion, setConfirmEliminacion] = useState({ open: false, id: null });
   const [usuario, setUsuarioState] = useState(null);
-  const [confirmarLogout, setConfirmarLogout] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const router = useRouter();
   const { favoritos, toggleFavorito } = useFavoritos();
   const [busqueda, setBusqueda] = useState("");
@@ -158,14 +158,17 @@ export default function Page() {
     return map;
   }, [productos]);
 
+  // **AÑADIDO: Obtener carrito y funciones de contexto aquí**
+  const { carrito, agregar, eliminar, cambiarCantidad, vaciar } = useCarrito();
+
   // Calcula total y cantidad solo si hay productos en el carrito
   const total = useMemo(
     () => carrito.reduce((acc, p) => acc + p.precio * p.cantidad, 0),
-    []
+    [carrito]
   );
   const cantidadCarrito = useMemo(
     () => carrito.reduce((acc, p) => acc + p.cantidad, 0),
-    []
+    [carrito]
   );
 
   // Solo muestra el toast de "añadido" si se añade un producto nuevo al carrito (no al cambiar cantidad)
@@ -232,21 +235,21 @@ export default function Page() {
       }
       agregar(producto);
     },
-    [showToast] // Solo se incluye showToast como dependencia
+    [agregar, carrito, showToast]
   );
 
   // Nueva función para eliminar con confirmación
-  const handleEliminar = (id) => {
-    setConfirmarEliminacion({ abierto: true, id });
+  const handleDelete = (id) => {
+    setConfirmEliminacion({ open : true, id });
   };
-  const confirmarEliminarProducto = () => {
-    if (confirmarEliminacion.id) {
-      eliminar(confirmarEliminacion.id);
+  const confirmDeleteProduct = () => {
+    if (confirmEliminacion.id) {
+      eliminar(confirmEliminacion.id);
     }
-    setConfirmarEliminacion({ abierto: false, id: null });
+    setConfirmEliminacion({ open: false, id: null });
   };
-  const cancelarEliminarProducto = () => {
-    setConfirmarEliminacion({ abierto: false, id: null });
+  const cancelDeleteProduct = () => {
+    setConfirmEliminacion({ open: false, id: null });
   };
 
   // Persistencia de usuario autenticado
@@ -444,7 +447,7 @@ export default function Page() {
           {/* Botón cerrar sesión con confirmación */}
           <button
             className="ml-2 bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded"
-            onClick={() => setConfirmarLogout(true)}
+            onClick={() => setConfirmLogout(true)}
             aria-label="Cerrar sesión"
           >
             Cerrar sesión
@@ -469,177 +472,173 @@ export default function Page() {
         </div>
       )}
 
-      <main className="p-4 flex-1">
-        {/* Carrito */}
-        <section
-          id="carrito"
-          className={`mt-8 ${mostrarCarrito ? "" : "hidden"} bg-white dark:bg-gray-700 rounded shadow p-4 max-w-lg mx-auto transition-all duration-300`}
-          aria-live="polite"
-        >
-          <h2 className="text-xl font-semibold mb-2">Mi Carrito</h2>
-          <ul id="lista-carrito" className="mb-4">
-            {carrito.length === 0 && (
-              <li className="text-gray-500 dark:text-gray-300">
-                El carrito está vacío.
-              </li>
-            )}
-            {carrito.map((prod) => (
-              <li
-                key={prod.id_producto ?? prod.id}
-                className="mb-2"
-              >
-                <ProductoItem
-                  producto={prod}
-                  enCarrito
-                  cantidad={prod.cantidad}
-                  onRemove={() => handleEliminar(prod.id_producto ?? prod.id)}
-                  onChangeCantidad={(delta) =>
-                    cambiarCantidad(prod.id_producto ?? prod.id, delta)
-                  }
-                />
-              </li>
-            ))}
-          </ul>
-          <p className="font-bold text-right mb-4">
-            Total: <span id="total">{total.toFixed(2)}€</span>
-          </p>
-          <button
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition disabled:opacity-50"
-            disabled={carrito.length === 0 || comprando}
-            onClick={() => setModalCompraAbierto(true)}
-            aria-label="Comprar"
-          >
-            Comprar
-          </button>
-        </section>
-
-        {/* Loader */}
-        {showLoader && (
-          <div className="flex justify-center items-center h-40">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
-            <span className="ml-4 text-blue-600 font-semibold">
-              Cargando productos...
-            </span>
-          </div>
-        )}
-
-        {/* Productos */}
-        <section
-          id="productos"
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
-          aria-label="Lista de productos"
-        >
-          {!loading &&
-            productosFiltrados.map((producto) => (
-              <div key={producto.id_producto ?? producto.id} className="relative">
-                <MemoProductoItem
-                  producto={producto}
-                  onAdd={() => handleAddProducto(producto)}
-                  enCarrito={false}
-                />
-                <button
-                  className={`absolute top-2 right-2 text-2xl ${favoritos.includes(producto.id_producto ?? producto.id) ? "text-red-500" : "text-gray-400"} hover:text-red-600 transition`}
-                  onClick={() => toggleFavorito(producto.id_producto ?? producto.id)}
-                  aria-label="Favorito"
-                  type="button"
-                >
-                  ♥
-                </button>
-              </div>
-            ))}
-        </section>
-        {/* Paginación */}
-        {totalPaginas > 1 && (
-          <div className="mt-6 flex justify-center items-center gap-2">
-            <button
-              onClick={() => setPagina(p => Math.max(p - 1, 1))}
-              disabled={pagina === 1}
-              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-            >
-              ← Anterior
-            </button>
-            <span className="font-semibold text-blue-700">
-              Página {pagina} de {totalPaginas}
-            </span>
-            <button
-              onClick={() => setPagina(p => Math.min(p + 1, totalPaginas))}
-              disabled={pagina === totalPaginas}
-              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-            >
-              Siguiente →
-            </button>
-          </div>
+      {/* Lista de productos */}
+      <main className="flex-grow p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {showLoader ? (
+          <div className="col-span-full text-center text-gray-500">Cargando productos...</div>
+        ) : productosFiltrados.length === 0 ? (
+          <div className="col-span-full text-center text-gray-500">No hay productos que mostrar</div>
+        ) : (
+          productosFiltrados.map((producto) => (
+            <MemoProductoItem
+              key={producto.id_producto ?? producto.id}
+              producto={producto}
+              onAgregar={() => handleAddProducto(producto)}
+              favoritos={favoritos}
+              toggleFavorito={toggleFavorito}
+            />
+          ))
         )}
       </main>
+
+      {/* Paginación */}
+      <nav
+        aria-label="Paginación de productos"
+        className="p-4 flex justify-center gap-4 flex-wrap"
+      >
+        <button
+          className="p-2 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-50"
+          onClick={() => setPagina((p) => Math.max(1, p - 1))}
+          disabled={pagina === 1}
+          aria-label="Página anterior"
+        >
+          « Anterior
+        </button>
+        <span className="p-2 rounded border border-gray-300 bg-white text-blue-600 font-bold">
+          Página {pagina} de {totalPaginas}
+        </span>
+        <button
+          className="p-2 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-50"
+          onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+          disabled={pagina === totalPaginas}
+          aria-label="Página siguiente"
+        >
+          Siguiente »
+        </button>
+      </nav>
+
+      {/* Carrito */}
+      {mostrarCarrito && (
+        <aside
+          aria-label="Carrito de compras"
+          className="fixed right-0 top-0 h-full w-80 bg-white dark:bg-gray-900 shadow-lg p-4 overflow-auto z-40"
+        >
+          <h2 className="text-xl font-bold mb-4">Carrito</h2>
+          {carrito.length === 0 ? (
+            <p>El carrito está vacío</p>
+          ) : (
+            <ul className="divide-y divide-gray-300 dark:divide-gray-700">
+              {carrito.map((item) => (
+                <li key={item.id_producto ?? item.id} className="py-2 flex items-center gap-2">
+                  <div className="flex-grow">
+                    <p className="font-semibold">{item.nombre}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Precio: €{item.precio} × {item.cantidad}
+                    </p>
+                  </div>
+                  <div className="flex gap-1 items-center">
+                    <button
+                      aria-label={`Disminuir cantidad de ${item.nombre}`}
+                      onClick={() => cambiarCantidad(item.id_producto ?? item.id, -1)}
+                      disabled={item.cantidad <= 1}
+                      className="p-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                    >
+                      –
+                    </button>
+                    <span aria-live="polite" aria-atomic="true" className="w-6 text-center">
+                      {item.cantidad}
+                    </span>
+                    <button
+                      aria-label={`Aumentar cantidad de ${item.nombre}`}
+                      onClick={() => cambiarCantidad(item.id_producto ?? item.id, 1)}
+                      disabled={item.cantidad >= item.stock}
+                      className="p-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600"
+                    >
+                      +
+                    </button>
+                    <button
+                      aria-label={`Eliminar ${item.nombre} del carrito`}
+                      onClick={() => handleDelete(item.id_producto ?? item.id)}
+                      className="p-1 rounded bg-red-500 text-white hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-4 border-t border-gray-300 dark:border-gray-700 pt-4">
+            <p className="font-bold text-lg">Total: €{total.toFixed(2)}</p>
+            <button
+              disabled={carrito.length === 0 || comprando}
+              onClick={() => setModalCompraAbierto(true)}
+              className={`mt-2 w-full py-2 rounded ${
+                carrito.length === 0 || comprando
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-600 hover:bg-blue-700"
+              } text-white font-semibold`}
+              aria-disabled={carrito.length === 0 || comprando}
+            >
+              {comprando ? "Procesando compra..." : "Comprar"}
+            </button>
+            <button
+              onClick={() => vaciar()}
+              disabled={carrito.length === 0 || comprando}
+              className="mt-2 w-full py-2 rounded bg-red-600 hover:bg-red-700 text-white font-semibold"
+              aria-disabled={carrito.length === 0 || comprando}
+            >
+              Vaciar carrito
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* Footer */}
       <footer className="bg-gray-800 text-white text-center p-4 mt-10">
         © 2025 Tienda Deportiva
       </footer>
 
-      {/* Modal de confirmación de compra */}
-      {compraExitosa && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-8 rounded shadow-lg text-center">
-            <h2 className="text-2xl font-bold mb-4 text-green-600">¡Compra realizada!</h2>
-            <p className="mb-4">Gracias por tu compra. Total pagado: <span className="font-bold">{compraTotal.toFixed(2)}€</span></p>
-            <button
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-              onClick={() => {
-                setCompraExitosa(false);
-                setCompraTotal(0);
-                fetchProductos(true).then(setProductos);
-              }}
-              aria-label="Cerrar confirmación"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
+      {/* Modal de compra */}
+      {modalCompraAbierto && (
+        <ModalCompra
+          open={modalCompraAbierto}
+          carrito={carrito}
+          total={total}
+          emailCliente={usuario?.email}
+          metodoPago={metodoPago}
+          setMetodoPago={setMetodoPago}
+          onCerrar={() => setModalCompraAbierto(false)}
+          vaciar={vaciar}
+          showToast={showToast}
+          fetchProductos={fetchProductos}
+          setProductos={setProductos}
+          productosMap={productosMap}
+          actualizarStock={actualizarStock}
+          realizarCompra={realizarCompra}
+        />
       )}
 
-      {/* Modal de compra como componente */}
-      <ModalCompra
-        open={modalCompraAbierto}
-        toast={<ToastComponent toast={toast} />}
-        emailCliente={usuario?.email || ""}
-        metodoPago={metodoPago}
-        setMetodoPago={setMetodoPago}
-        comprando={comprando}
-        carrito={carrito}
-        productosMap={productosMap}
-        fetchProductos={fetchProductos}
-        setProductos={setProductos}
-        vaciar={vaciar}
-        setCompraTotal={setCompraTotal}
-        setCompraExitosa={setCompraExitosa}
-        setModalCompraAbierto={setModalCompraAbierto}
-        setComprando={setComprando}
-        showToast={showToast}
-        realizarCompra={realizarCompra}
-        validarDatosCompra={validarDatosCompra}
-        actualizarStock={actualizarStock}
-        total={total}
+      {/* Confirm modal para eliminar producto */}
+      <ConfirmModal
+        open={confirmEliminacion.open}
+        titulo="Eliminar producto"
+        mensaje="¿Estás seguro de que quieres eliminar este producto del carrito?"
+        onConfirm={confirmDeleteProduct}
+        onCancel={cancelDeleteProduct}
       />
 
-      {/* Modal de confirmación de eliminación */}
+      {/* Confirm modal para cerrar sesión */}
       <ConfirmModal
-        open={confirmarEliminacion.abierto}
-        onConfirm={confirmarEliminarProducto}
-        onCancel={cancelarEliminarProducto}
-        mensaje="¿Estás seguro de que deseas eliminar este producto del carrito?"
-      />
-
-      {/* Modal de confirmación de logout */}
-      <ConfirmModal
-        open={confirmarLogout}
+        open={confirmLogout}
+        titulo="Cerrar sesión"
+        mensaje="¿Quieres cerrar la sesión?"
         onConfirm={() => {
           setUsuario(null);
-          setConfirmarLogout(false);
+          setConfirmLogout(false);
+          router.refresh();
         }}
-        onCancel={() => setConfirmarLogout(false)}
-        mensaje="¿Seguro que quieres cerrar sesión?"
-        cerrar={true}
+        onCancel={() => setConfirmLogout(false)}
       />
     </div>
   );

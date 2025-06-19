@@ -1,4 +1,5 @@
 import React from "react";
+import { realizarCompra } from "./usecompra";
 
 export default function ModalCompra({
   open,
@@ -14,13 +15,12 @@ export default function ModalCompra({
   vaciar,
   setCompraTotal,
   setCompraExitosa,
-  setModalCompraAbierto,
+  onCerrar,
   setComprando,
   showToast,
-  realizarCompra,
   validarDatosCompra,
   actualizarStock,
-  total
+  total,
 }) {
   if (!open) return null;
 
@@ -37,67 +37,83 @@ export default function ModalCompra({
           onSubmit={async (e) => {
             e.preventDefault();
             if (comprando) return;
-            // Solo valida método de pago, no email
+
             const error = validarDatosCompra(emailCliente, metodoPago);
             if (error) {
               showToast(error, "error");
               return;
             }
+
             setComprando(true);
             try {
               // Buscar el id_cliente por email en el backend
-              const res = await fetch(`/api/clientes?email=${encodeURIComponent(emailCliente)}`);
+              const res = await fetch(
+                `/api/clientes?email=${encodeURIComponent(emailCliente)}`
+              );
               const data = await res.json();
-              if (data && data.message === 'El correo no existe') {
-                showToast('El correo introducido no existe', 'error');
+
+              if (data?.message === "El correo no existe") {
+                showToast("El correo introducido no existe", "error");
                 setComprando(false);
                 return;
               }
-              if (!data || !data.id_cliente) throw new Error('Cliente no encontrado');
+              if (!data?.id_cliente) {
+                throw new Error("Cliente no encontrado");
+              }
+
+              // Realizar compra con función mejorada
               const pedidoRes = await realizarCompra({
                 id_cliente: data.id_cliente,
                 total,
                 metodo_pago: metodoPago,
-                productos: carrito.map(p => ({
+                productos: carrito.map((p) => ({
                   id_producto: p.id_producto ?? p.id,
                   cantidad: p.cantidad,
-                  precio_unitario: p.precio
-                }))
+                  precio_unitario: p.precio,
+                })),
               });
-              if (pedidoRes && pedidoRes.error) {
-                showToast(`Error: ${pedidoRes.error}`, 'error');
+
+              if (pedidoRes.error) {
+                showToast(`Error: ${pedidoRes.error}`, "error");
                 setComprando(false);
                 return;
               }
-              // Actualiza el stock en la base de datos para cada producto usando productosMap
-              await Promise.all(carrito.map(p => {
-                const productoActual = productosMap.get(p.id_producto ?? p.id);
-                const nuevoStock = (productoActual?.stock ?? 0) - p.cantidad;
-                return actualizarStock(p.id_producto ?? p.id, nuevoStock);
-              }));
-              // Refresca productos desde la base de datos (asegura recarga tras compra)
+
+              // Actualizar stock para cada producto
+              await Promise.all(
+                carrito.map((p) => {
+                  const productoActual = productosMap.get(p.id_producto ?? p.id);
+                  const nuevoStock = (productoActual?.stock ?? 0) - p.cantidad;
+                  return actualizarStock(p.id_producto ?? p.id, nuevoStock);
+                })
+              );
+
+              // Refrescar productos
               const nuevosProductos = await fetchProductos(true);
               setProductos(Array.isArray(nuevosProductos) ? nuevosProductos : []);
               vaciar();
               setCompraTotal(total);
               setCompraExitosa(true);
-              setModalCompraAbierto(false);
-              setComprando(false);
-              setMetodoPago("");   // Limpia método de pago tras compra
+              onCerrar();
+              setMetodoPago("");
             } catch (e) {
-              showToast(e?.message ? `Error: ${e.message}` : "Error al tramitar el pedido", "error");
+              showToast(
+                e?.message ? `Error: ${e.message}` : "Error al tramitar el pedido",
+                "error"
+              );
+            } finally {
               setComprando(false);
             }
           }}
         >
-          {/* Email eliminado, solo se muestra el email autenticado */}
+          {/* Mostrar email autenticado (solo lectura) */}
           <div className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white min-w-[220px] bg-gray-100 text-gray-700 cursor-not-allowed select-none">
             {emailCliente}
           </div>
           <select
             className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white"
             value={metodoPago}
-            onChange={e => setMetodoPago(e.target.value)}
+            onChange={(e) => setMetodoPago(e.target.value)}
             required
             disabled={comprando}
           >
@@ -111,7 +127,7 @@ export default function ModalCompra({
               type="button"
               className="flex-1 btn-modal-cancel"
               onClick={() => {
-                setModalCompraAbierto(false);
+                onCerrar();
                 setMetodoPago("");
               }}
               disabled={comprando}
@@ -136,7 +152,7 @@ export default function ModalCompra({
                   Procesando...
                 </>
               ) : (
-                'Comprar'
+                "Comprar"
               )}
             </button>
           </div>

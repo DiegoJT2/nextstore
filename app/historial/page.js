@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCarrito } from "@/context/CarritoContext";
+import { useCarrito } from "@/context/carritocontext";
 
 // Toast animado y elegante
 function Toast({ toast }) {
