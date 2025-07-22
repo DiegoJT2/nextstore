@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { fetchProductos, actualizarStock, fetchProductosPaginado } from "./api/productosapi";
-import ProductoItem from "./components/productoitem";
+import ProductoItem from "./components/productoItem";
 import { realizarCompra } from "./api/pedidosapi";
-import ModalCompra from "./components/modalcompra";
-import ConfirmModal from "./components/confirmmodal";
-import AuthForm from "./components/authform";
+import ModalCompra from "./components/modalCompra";
+import ConfirmModal from "./components/confirmModal";
+import AuthForm from "./components/authForm";
 import { useRouter } from "next/navigation";
 import { useCarrito } from "@/context/carritocontext";
 
