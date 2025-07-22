@@ -44,17 +44,6 @@ function useToast() {
   return [toast, showToast];
 }
 
-// Utilidad para validar email y método de pago (fuera del componente)
-function validarDatosCompra(email, metodoPago) {
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return "Debes introducir un correo válido";
-  }
-  if (!metodoPago) {
-    return "Debes elegir un método de pago";
-  }
-  return null;
-}
-
 // Hook para debounce de filtros
 function useDebouncedValue(value, delay = 400) {
   const [debounced, setDebounced] = useState(value);
@@ -87,6 +76,25 @@ function useFavoritos() {
   return { favoritos, toggleFavorito };
 }
 
+// Hook reutilizable para confirmaciones
+function useConfirmAction() {
+  const [state, setState] = useState({ open: false, titulo: '', mensaje: '', onConfirm: null });
+  const showConfirm = (titulo, mensaje, onConfirm) => {
+    setState({ open: true, titulo, mensaje, onConfirm });
+  };
+  const handleConfirm = () => {
+    if (state.onConfirm) state.onConfirm();
+    setState({ ...state, open: false });
+  };
+  const handleCancel = () => setState({ ...state, open: false });
+  return {
+    confirmState: state,
+    showConfirm,
+    handleConfirm,
+    handleCancel,
+  };
+}
+
 export default function Page() {
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -102,8 +110,9 @@ export default function Page() {
   const [compraTotal, setCompraTotal] = useState(0);
   const [modalCompraAbierto, setModalCompraAbierto] = useState(false);
   const [ultimoCarrito, setUltimoCarrito] = useState([]);
-  const [confirmEliminacion, setConfirmEliminacion] = useState({ open: false, id: null });
+  const confirm = useConfirmAction();
   const [usuario, setUsuarioState] = useState(null);
+  // Estado para mostrar el modal de cierre de sesión
   const [confirmLogout, setConfirmLogout] = useState(false);
   const router = useRouter();
   const { favoritos, toggleFavorito } = useFavoritos();
@@ -158,7 +167,7 @@ export default function Page() {
     return map;
   }, [productos]);
 
-  // **AÑADIDO: Obtener carrito y funciones de contexto aquí**
+  // Obtener carrito y funciones de contexto
   const { carrito, agregar, eliminar, cambiarCantidad, vaciar } = useCarrito();
 
   // Calcula total y cantidad solo si hay productos en el carrito
@@ -238,18 +247,27 @@ export default function Page() {
     [agregar, carrito, showToast]
   );
 
-  // Nueva función para eliminar con confirmación
+  // Eliminar producto con confirmación
   const handleDelete = (id) => {
-    setConfirmEliminacion({ open : true, id });
+    confirm.showConfirm(
+      "Eliminar producto",
+      "¿Estás seguro de que quieres eliminar este producto del carrito?",
+      () => {
+        eliminar(id);
+        showToast("Producto eliminado", "success");
+      }
+    );
   };
-  const confirmDeleteProduct = () => {
-    if (confirmEliminacion.id) {
-      eliminar(confirmEliminacion.id);
-    }
-    setConfirmEliminacion({ open: false, id: null });
-  };
-  const cancelDeleteProduct = () => {
-    setConfirmEliminacion({ open: false, id: null });
+  // Vaciar carrito con confirmación
+  const handleVaciarCarrito = () => {
+    confirm.showConfirm(
+      "Vaciar carrito",
+      "¿Seguro que quiere vaciar el carrito? Esta acción eliminará todos los productos.",
+      () => {
+        vaciar();
+        showToast("Carrito vaciado", "success");
+      }
+    );
   };
 
   // Persistencia de usuario autenticado
@@ -483,7 +501,7 @@ export default function Page() {
             <MemoProductoItem
               key={producto.id_producto ?? producto.id}
               producto={producto}
-              onAgregar={() => handleAddProducto(producto)}
+              onAdd={() => handleAddProducto(producto)}
               favoritos={favoritos}
               toggleFavorito={toggleFavorito}
             />
@@ -583,7 +601,7 @@ export default function Page() {
               {comprando ? "Procesando compra..." : "Comprar"}
             </button>
             <button
-              onClick={() => vaciar()}
+              onClick={handleVaciarCarrito}
               disabled={carrito.length === 0 || comprando}
               className="mt-2 w-full py-2 rounded bg-red-600 hover:bg-red-700 text-white font-semibold"
               aria-disabled={carrito.length === 0 || comprando}
@@ -608,6 +626,8 @@ export default function Page() {
           emailCliente={usuario?.email}
           metodoPago={metodoPago}
           setMetodoPago={setMetodoPago}
+          comprando={comprando}
+          setComprando={setComprando}
           onCerrar={() => setModalCompraAbierto(false)}
           vaciar={vaciar}
           showToast={showToast}
@@ -619,26 +639,22 @@ export default function Page() {
         />
       )}
 
-      {/* Confirm modal para eliminar producto */}
+      {/* Confirm modal para acciones y cierre de sesión */}
       <ConfirmModal
-        open={confirmEliminacion.open}
-        titulo="Eliminar producto"
-        mensaje="¿Estás seguro de que quieres eliminar este producto del carrito?"
-        onConfirm={confirmDeleteProduct}
-        onCancel={cancelDeleteProduct}
-      />
-
-      {/* Confirm modal para cerrar sesión */}
-      <ConfirmModal
-        open={confirmLogout}
-        titulo="Cerrar sesión"
-        mensaje="¿Quieres cerrar la sesión?"
-        onConfirm={() => {
-          setUsuario(null);
-          setConfirmLogout(false);
-          router.refresh();
-        }}
-        onCancel={() => setConfirmLogout(false)}
+        open={confirm.confirmState.open || confirmLogout}
+        titulo={confirmLogout ? "Cerrar sesión" : confirm.confirmState.titulo}
+        mensaje={confirmLogout ? "¿Quieres cerrar la sesión?" : confirm.confirmState.mensaje}
+        cerrar={confirmLogout}
+        onConfirm={confirmLogout
+          ? () => {
+              setUsuario(null);
+              setConfirmLogout(false);
+              router.refresh();
+            }
+          : confirm.handleConfirm}
+        onCancel={confirmLogout
+          ? () => setConfirmLogout(false)
+          : confirm.handleCancel}
       />
     </div>
   );

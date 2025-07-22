@@ -22,6 +22,16 @@ export default function ModalCompra({
   actualizarStock,
   total,
 }) {
+  // Validación por defecto si no se pasa la función
+  const validar = validarDatosCompra || ((email, metodoPago) => {
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return "Debes introducir un correo válido";
+    }
+    if (!metodoPago) {
+      return "Debes elegir un método de pago";
+    }
+    return null;
+  });
   if (!open) return null;
 
   return (
@@ -38,7 +48,7 @@ export default function ModalCompra({
             e.preventDefault();
             if (comprando) return;
 
-            const error = validarDatosCompra(emailCliente, metodoPago);
+            const error = validar(emailCliente, metodoPago);
             if (error) {
               showToast(error, "error");
               return;
@@ -50,11 +60,14 @@ export default function ModalCompra({
               const res = await fetch(
                 `/api/clientes?email=${encodeURIComponent(emailCliente)}`
               );
+              if (!res.ok) {
+                showToast("Error al consultar el cliente", "error");
+                return;
+              }
               const data = await res.json();
 
               if (data?.message === "El correo no existe") {
                 showToast("El correo introducido no existe", "error");
-                setComprando(false);
                 return;
               }
               if (!data?.id_cliente) {
@@ -75,7 +88,6 @@ export default function ModalCompra({
 
               if (pedidoRes.error) {
                 showToast(`Error: ${pedidoRes.error}`, "error");
-                setComprando(false);
                 return;
               }
 
