@@ -104,9 +104,17 @@ export default function ModalCompra({
               const nuevosProductos = await fetchProductos(true);
               setProductos(Array.isArray(nuevosProductos) ? nuevosProductos : []);
               vaciar();
-              setCompraTotal(total);
-              setCompraExitosa(true);
-              onCerrar();
+              if (typeof setCompraTotal === "function") {
+                setCompraTotal(total);
+              }
+              if (typeof setCompraExitosa === "function") {
+                setCompraExitosa(true);
+              }
+              if (typeof onCompraExitosa === "function") {
+                onCompraExitosa();
+              } else {
+                onCerrar();
+              }
               setMetodoPago("");
             } catch (e) {
               showToast(

@@ -6,137 +6,83 @@ import ProductoItem from "./components/productoItem";
 import { realizarCompra } from "./api/pedidosapi";
 import ModalCompra from "./components/modalCompra";
 import ConfirmModal from "./components/confirmModal";
+import ToastComponent from "./components/ToastComponent";
+import useToast from "./hooks/useToast";
+import useConfirmAction from "./hooks/useConfirmAction";
+import useFavoritos from "./hooks/useFavoritos";
+import useDebouncedValue from "./hooks/useDebouncedValue";
 import AuthForm from "./components/authForm";
+import TelefonoInput from "./components/TelefonoInput";
 import { useRouter } from "next/navigation";
 import { useCarrito } from "@/context/carritocontext";
 
-// Componente Toast reutilizable
-function ToastComponent({ toast }) {
-  if (!toast) return null;
-  return (
-    <div
-      className={`fixed bottom-6 right-6 z-50 px-4 py-2 rounded shadow-lg text-white transition-all duration-300 ${
-        toast.type === "error" ? "bg-red-500" : "bg-green-500"
-      }`}
-      role="alert"
-      aria-live="polite"
-    >
-      {toast.msg}
-    </div>
-  );
-}
-
-// Hook para toasts
-function useToast() {
-  const [toast, setToast] = useState(null);
-  const timeoutRef = useRef();
-
-  const showToast = useCallback((msg, type = "success") => {
-    setToast({ msg, type });
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setToast(null), 2500);
-  }, []);
-
-  useEffect(() => {
-    return () => clearTimeout(timeoutRef.current);
-  }, []);
-
-  return [toast, showToast];
-}
-
-// Hook para debounce de filtros
-function useDebouncedValue(value, delay = 400) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debounced;
-}
-
-// Hook para favoritos (localStorage)
-function useFavoritos() {
-  const [favoritos, setFavoritos] = useState([]);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const fav = localStorage.getItem("favoritos");
-      if (fav) setFavoritos(JSON.parse(fav));
-    }
-  }, []);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("favoritos", JSON.stringify(favoritos));
-    }
-  }, [favoritos]);
-  const toggleFavorito = useCallback((id) => {
-    setFavoritos((prev) =>
-      prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
-    );
-  }, []);
-  return { favoritos, toggleFavorito };
-}
-
-// Hook reutilizable para confirmaciones
-function useConfirmAction() {
-  const [state, setState] = useState({ open: false, titulo: '', mensaje: '', onConfirm: null });
-  const showConfirm = (titulo, mensaje, onConfirm) => {
-    setState({ open: true, titulo, mensaje, onConfirm });
-  };
-  const handleConfirm = () => {
-    if (state.onConfirm) state.onConfirm();
-    setState({ ...state, open: false });
-  };
-  const handleCancel = () => setState({ ...state, open: false });
-  return {
-    confirmState: state,
-    showConfirm,
-    handleConfirm,
-    handleCancel,
-  };
-}
-
 export default function Page() {
+  // Estados principales
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(0); // 0 = Todas
   const [loading, setLoading] = useState(true);
   const [mostrarCarrito, setMostrarCarrito] = useState(false);
   const [toast, showToast] = useToast();
-  // Estado para el método de pago
   const [metodoPago, setMetodoPago] = useState("");
-  // Estado para loading de compra y confirmación
   const [comprando, setComprando] = useState(false);
-  const [compraExitosa, setCompraExitosa] = useState(false);
-  const [compraTotal, setCompraTotal] = useState(0);
   const [modalCompraAbierto, setModalCompraAbierto] = useState(false);
   const [ultimoCarrito, setUltimoCarrito] = useState([]);
+  const [compraExitosa, setCompraExitosa] = useState(false);
+  const [compraTotal, setCompraTotal] = useState(0);
   const confirm = useConfirmAction();
   const [usuario, setUsuarioState] = useState(null);
-  // Estado para mostrar el modal de cierre de sesión
   const [confirmLogout, setConfirmLogout] = useState(false);
   const router = useRouter();
   const { favoritos, toggleFavorito } = useFavoritos();
   const [busqueda, setBusqueda] = useState("");
   const [mostrarPerfil, setMostrarPerfil] = useState(false);
   const [puntos, setPuntos] = useState(0);
-
-  // Paginación de productos
   const [pagina, setPagina] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
   const productosPorPagina = 12;
-
-  // Filtros avanzados
   const [precioMin, setPrecioMin] = useState("");
   const [precioMax, setPrecioMax] = useState("");
   const [marca, setMarca] = useState("");
   const [stockMin, setStockMin] = useState("");
-
-  // Debounced values para evitar llamadas excesivas
   const debouncedPrecioMin = useDebouncedValue(precioMin);
   const debouncedPrecioMax = useDebouncedValue(precioMax);
   const debouncedMarca = useDebouncedValue(marca);
   const debouncedStockMin = useDebouncedValue(stockMin);
-
+  // Definición de setUsuario antes del callback que lo usa
+  const setUsuario = useCallback((user) => {
+    setUsuarioState(user);
+    if (typeof window !== "undefined") {
+      if (user) {
+        localStorage.setItem("usuario", JSON.stringify(user));
+      } else {
+        localStorage.removeItem("usuario");
+      }
+    }
+  }, []);
+  // Callback optimizado para guardar teléfono y cerrar modal
+  // Callback optimizado para guardar teléfono y cerrar modal (ahora guarda en la base de datos)
+  const handleSaveTelefono = useCallback(async (tel) => {
+    if (!usuario?.email) {
+      showToast("No se puede guardar el teléfono sin email de usuario", "error");
+      return;
+    }
+    try {
+      const res = await fetch("/api/clientes", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email: usuario.email, telefono: tel })
+      });
+      if (!res.ok) throw new Error("Error al guardar el teléfono");
+      setUsuario({ ...usuario, telefono: tel });
+      setMostrarPerfil(false);
+      showToast("Teléfono actualizado correctamente", "success");
+    } catch (err) {
+      showToast("No se pudo guardar el teléfono", "error");
+    }
+  }, [usuario, setUsuario, showToast]);
   // Limpia filtros al cambiar de categoría
   useEffect(() => {
     setPrecioMin("");
@@ -145,10 +91,7 @@ export default function Page() {
     setStockMin("");
     setPagina(1);
   }, [categoriaSeleccionada]);
-
   // Historial de compras
-  const [historial, setHistorial] = useState([]);
-  const [mostrarHistorial, setMostrarHistorial] = useState(false);
   const cargarHistorial = () => {
     if (!usuario?.email) {
       showToast("Debes iniciar sesión para ver el historial", "error");
@@ -156,7 +99,6 @@ export default function Page() {
     }
     router.push("/historial");
   };
-
   // Memoiza productos por id para acceso rápido
   const productosMap = useMemo(() => {
     const arr = Array.isArray(productos) ? productos : [];
@@ -166,10 +108,8 @@ export default function Page() {
     }
     return map;
   }, [productos]);
-
   // Obtener carrito y funciones de contexto
   const { carrito, agregar, eliminar, cambiarCantidad, vaciar } = useCarrito();
-
   // Calcula total y cantidad solo si hay productos en el carrito
   const total = useMemo(
     () => carrito.reduce((acc, p) => acc + p.precio * p.cantidad, 0),
@@ -179,7 +119,6 @@ export default function Page() {
     () => carrito.reduce((acc, p) => acc + p.cantidad, 0),
     [carrito]
   );
-
   // Solo muestra el toast de "añadido" si se añade un producto nuevo al carrito (no al cambiar cantidad)
   useEffect(() => {
     if (!ultimoCarrito.length) {
@@ -192,25 +131,15 @@ export default function Page() {
       showToast("Producto añadido al carrito");
     }
     setUltimoCarrito(carrito);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [carrito]);
-
+  }, [carrito, showToast, ultimoCarrito]);
   useEffect(() => {
     setLoading(true);
-    // fetchCategoriasConCache()
-    //   .then(setCategorias)
-    //   .catch(() => showToast("Error al cargar categorías", "error"))
-    //   .finally(() => setLoading(false));
-    // Sustituye por fetchCategorias si quieres mantener la carga de categorías
     fetch('/api/categorias')
       .then(res => res.json())
       .then(setCategorias)
       .catch(() => showToast("Error al cargar categorías", "error"))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Cargar productos paginados con filtros correctos
+  }, [showToast]);
   useEffect(() => {
     setLoading(true);
     fetchProductosPaginado({
@@ -229,8 +158,6 @@ export default function Page() {
       .catch(() => showToast("Error al cargar productos", "error"))
       .finally(() => setLoading(false));
   }, [pagina, categoriaSeleccionada, productosPorPagina, debouncedPrecioMin, debouncedPrecioMax, debouncedMarca, debouncedStockMin, showToast]);
-
-  // handleAddProducto optimizado
   const handleAddProducto = useCallback(
     (producto) => {
       const productoId = producto.id_producto ?? producto.id;
@@ -246,8 +173,6 @@ export default function Page() {
     },
     [agregar, carrito, showToast]
   );
-
-  // Eliminar producto con confirmación
   const handleDelete = (id) => {
     confirm.showConfirm(
       "Eliminar producto",
@@ -258,7 +183,6 @@ export default function Page() {
       }
     );
   };
-  // Vaciar carrito con confirmación
   const handleVaciarCarrito = () => {
     confirm.showConfirm(
       "Vaciar carrito",
@@ -269,8 +193,6 @@ export default function Page() {
       }
     );
   };
-
-  // Persistencia de usuario autenticado
   useEffect(() => {
     // Al montar, intenta cargar usuario de localStorage
     if (typeof window !== "undefined") {
@@ -282,7 +204,6 @@ export default function Page() {
       }
     }
   }, []);
-  // Guarda usuario en localStorage al cambiar
   useEffect(() => {
     if (typeof window !== "undefined") {
       if (usuario) {
@@ -292,20 +213,6 @@ export default function Page() {
       }
     }
   }, [usuario]);
-
-  // Wrapper para setUsuario que sincroniza con localStorage
-  const setUsuario = useCallback((user) => {
-    setUsuarioState(user);
-    if (typeof window !== "undefined") {
-      if (user) {
-        localStorage.setItem("usuario", JSON.stringify(user));
-      } else {
-        localStorage.removeItem("usuario");
-      }
-    }
-  }, []);
-
-  // Cargar puntos de fidelidad al iniciar sesión
   useEffect(() => {
     if (usuario?.email) {
       fetch(`/api/clientes?email=${encodeURIComponent(usuario.email)}`)
@@ -314,8 +221,6 @@ export default function Page() {
         .catch(() => setPuntos(0));
     }
   }, [usuario]);
-
-  // Búsqueda y favoritos en productos
   const productosFiltrados = useMemo(() => {
     let arr = Array.isArray(productos) ? productos : [];
     if (busqueda.trim()) {
@@ -327,8 +232,6 @@ export default function Page() {
     }
     return arr.filter(p => categoriaSeleccionada === 0 || p.id_categoria === categoriaSeleccionada);
   }, [productos, busqueda, categoriaSeleccionada]);
-
-  // Loader solo si loading > 300ms
   const [showLoader, setShowLoader] = useState(false);
   useEffect(() => {
     let timeout;
@@ -339,8 +242,6 @@ export default function Page() {
     }
     return () => clearTimeout(timeout);
   }, [loading]);
-
-  // Descargar factura (JSON simulado)
   const descargarFactura = (pedido) => {
     const data = {
       pedido: pedido.id_pedido,
@@ -358,10 +259,7 @@ export default function Page() {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  // React.memo para ProductoItem
   const MemoProductoItem = React.memo(ProductoItem);
-
   if (!usuario) {
     return <AuthForm onAuth={setUsuario} />;
   }
@@ -374,69 +272,73 @@ export default function Page() {
       <header className="bg-blue-600 text-white p-4 flex flex-col sm:flex-row justify-between items-center shadow gap-2">
         <div className="flex items-center gap-4 w-full sm:w-auto justify-between">
           <h1 className="text-2xl font-bold">Tienda Deportiva</h1>
-          {/* Filtro de categorías */}
-          <select
-            className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white text-black sm:ml-4"
-            value={categoriaSeleccionada}
-            onChange={e => setCategoriaSeleccionada(Number(e.target.value))}
-          >
-            <option value={0}>Todas las categorías</option>
-            {categorias.map(cat => (
-              <option key={cat.id_categoria} value={cat.id_categoria}>{cat.nombre}</option>
-            ))}
-          </select>
-          {/* Filtros avanzados */}
-          <input
-            type="text"
-            placeholder="Buscar"
-            className="p-2 rounded border border-gray-300 text-black w-32"
-            value={busqueda}
-            onChange={e => setBusqueda(e.target.value)}
-          />
-          <input
-            type="number"
-            min="0"
-            placeholder="mín €"
-            className="p-2 rounded border border-gray-300 text-black w-24"
-            value={precioMin}
-            onChange={e => setPrecioMin(e.target.value.replace(/^0+/, ""))}
-            onBlur={e => setPrecioMin(e.target.value.replace(/^0+/, ""))}
-          />
-          <input
-            type="number"
-            min="0"
-            placeholder="máx €"
-            className="p-2 rounded border border-gray-300 text-black w-24"
-            value={precioMax}
-            onChange={e => setPrecioMax(e.target.value.replace(/^0+/, ""))}
-            onBlur={e => setPrecioMax(e.target.value.replace(/^0+/, ""))}
-          />
-          <input
-            type="text"
-            placeholder="Marca"
-            className="p-2 rounded border border-gray-300 text-black w-24"
-            value={marca}
-            onChange={e => setMarca(e.target.value)}
-          />
-          <input
-            type="number"
-            min="0"
-            placeholder="Stock mín."
-            className="p-2 rounded border border-gray-300 text-black w-24"
-            value={stockMin}
-            onChange={e => setStockMin(e.target.value.replace(/^0+/, ""))}
-            onBlur={e => setStockMin(e.target.value.replace(/^0+/, ""))}
-          />
+          {/* Filtro de categorías y filtros avanzados */}
+          <div className="flex items-center gap-2">
+            <select
+              className="p-2 rounded border border-gray-300 dark:bg-gray-700 dark:text-white text-black sm:ml-4"
+              value={categoriaSeleccionada}
+              onChange={e => setCategoriaSeleccionada(Number(e.target.value))}
+            >
+              <option value={0}>Todas las categorías</option>
+              {categorias.map(cat => (
+                <option key={cat.id_categoria} value={cat.id_categoria}>{cat.nombre}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="Buscar"
+              className="p-2 rounded border border-gray-300 text-black w-32"
+              value={busqueda}
+              onChange={e => setBusqueda(e.target.value)}
+            />
+            <input
+              type="number"
+              min="0"
+              placeholder="mín €"
+              className="p-2 rounded border border-gray-300 text-black w-24"
+              value={precioMin}
+              onChange={e => setPrecioMin(e.target.value.replace(/^0+/, ""))}
+              onBlur={e => setPrecioMin(e.target.value.replace(/^0+/, ""))}
+            />
+            <input
+              type="number"
+              min="0"
+              placeholder="máx €"
+              className="p-2 rounded border border-gray-300 text-black w-24"
+              value={precioMax}
+              onChange={e => setPrecioMax(e.target.value.replace(/^0+/, ""))}
+              onBlur={e => setPrecioMax(e.target.value.replace(/^0+/, ""))}
+            />
+            <input
+              type="text"
+              placeholder="Marca"
+              className="p-2 rounded border border-gray-300 text-black w-24"
+              value={marca}
+              onChange={e => setMarca(e.target.value)}
+            />
+            <input
+              type="number"
+              min="0"
+              placeholder="Stock mín."
+              className="p-2 rounded border border-gray-300 text-black w-24"
+              value={stockMin}
+              onChange={e => setStockMin(e.target.value.replace(/^0+/, ""))}
+              onBlur={e => setStockMin(e.target.value.replace(/^0+/, ""))}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2 mt-2 sm:mt-0">
+        <div className="flex items-center gap-2 mt-2 sm:mt-0 ml-auto">
           <span className="bg-white text-blue-600 rounded px-2 py-1 font-bold mr-2">
             Puntos: {puntos}
           </span>
+          {/* Icono/avatar de usuario para acceso al perfil */}
           <button
-            className="bg-gray-200 text-blue-600 px-2 py-1 rounded hover:bg-gray-300"
+            className="bg-gray-200 text-blue-600 px-2 py-1 rounded-full hover:bg-gray-300 flex items-center gap-2 focus:outline-none"
             onClick={() => setMostrarPerfil(true)}
+            aria-label="Abrir perfil de usuario"
           >
-            Perfil
+            <span className="text-xl">👤</span>
+            <span className="hidden sm:inline">Perfil</span>
           </button>
           <button
             id="icono-carrito"
@@ -486,6 +388,12 @@ export default function Page() {
             <div className="mb-2"><b>Nombre:</b> {usuario.nombre}</div>
             <div className="mb-2"><b>Email:</b> {usuario.email}</div>
             <div className="mb-2"><b>Puntos de fidelidad:</b> {puntos}</div>
+            {/* Teléfono para 2FA como componente */}
+            <TelefonoInput
+              value={usuario.telefono || ""}
+              onSave={handleSaveTelefono}
+              showToast={showToast}
+            />
           </div>
         </div>
       )}
@@ -497,15 +405,28 @@ export default function Page() {
         ) : productosFiltrados.length === 0 ? (
           <div className="col-span-full text-center text-gray-500">No hay productos que mostrar</div>
         ) : (
-          productosFiltrados.map((producto) => (
-            <MemoProductoItem
-              key={producto.id_producto ?? producto.id}
-              producto={producto}
-              onAdd={() => handleAddProducto(producto)}
-              favoritos={favoritos}
-              toggleFavorito={toggleFavorito}
-            />
-          ))
+          productosFiltrados.map((producto) => {
+            const productoId = producto.id_producto ?? producto.id;
+            const esFavorito = favoritos.includes(productoId);
+            return (
+              <div key={productoId} className="relative">
+                <MemoProductoItem
+                  producto={producto}
+                  onAdd={() => handleAddProducto(producto)}
+                  favoritos={favoritos}
+                  toggleFavorito={toggleFavorito}
+                />
+                <button
+                  className={`absolute top-2 right-2 text-2xl focus:outline-none ${esFavorito ? "text-yellow-400" : "text-gray-400 hover:text-yellow-400"}`}
+                  title={esFavorito ? "Quitar de favoritos" : "Agregar a favoritos"}
+                  aria-label={esFavorito ? "Quitar de favoritos" : "Agregar a favoritos"}
+                  onClick={() => toggleFavorito(productoId)}
+                >
+                  {esFavorito ? "★" : "☆"}
+                </button>
+              </div>
+            );
+          })
         )}
       </main>
 
@@ -636,7 +557,45 @@ export default function Page() {
           productosMap={productosMap}
           actualizarStock={actualizarStock}
           realizarCompra={realizarCompra}
+          setCompraTotal={setCompraTotal}
+          setCompraExitosa={setCompraExitosa}
         />
+      )}
+
+      {/* Modal de confirmación de compra exitosa */}
+      {compraExitosa && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded shadow-lg text-center">
+            <h2 className="text-2xl font-bold mb-4 text-green-600">¡Compra realizada!</h2>
+            <p className="mb-4">Gracias por tu compra. Total pagado: <span className="font-bold">{compraTotal.toFixed(2)}€</span></p>
+            <button
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+              onClick={async () => {
+                setCompraExitosa(false);
+                setCompraTotal(0);
+                setPagina(1);
+                setCategoriaSeleccionada(0);
+                setBusqueda("");
+                setPrecioMin("");
+                setPrecioMax("");
+                setMarca("");
+                setStockMin("");
+                setLoading(true);
+                const { productos, total } = await fetchProductosPaginado({
+                  limit: productosPorPagina,
+                  offset: 0,
+                  categoria: 0
+                });
+                setProductos(Array.isArray(productos) ? productos : []);
+                setTotalPaginas(Math.ceil(total / productosPorPagina));
+                setLoading(false);
+              }}
+              aria-label="Cerrar confirmación"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Confirm modal para acciones y cierre de sesión */}
